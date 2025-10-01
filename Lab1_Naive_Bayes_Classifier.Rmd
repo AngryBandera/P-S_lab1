@@ -1,0 +1,41 @@
+library(readr)
+library(dplyr)
+library(tidytext)
+library(stringr)
+library(purrr)
+
+# зчитуємо додаткові стоп-слова та об'єднуємо з tidytext::stop_words
+custom_stop_words <- tibble(word = unique(read_lines("stop_words.txt")))
+all_stop_words <- bind_rows(tidytext::stop_words %>% select(word), custom_stop_words) %>%
+  distinct(word)
+
+clean_text_generic <- function(df) {
+  # шукаємо можливу колонку з текстом
+  colname <- intersect(names(df), c("text", "tweet", "Message"))
+  if (length(colname) == 0) stop("У датафреймі немає колонки text/tweet/Message")
+  
+  df %>%
+    mutate(
+      text_col = as.character(.data[[colname]]),
+      text_col = str_to_lower(text_col),
+      text_col = str_replace_all(text_col, "[[:punct:]]", " "),
+      text_col = str_replace_all(text_col, "[[:digit:]]", " ")
+    ) %>%
+    unnest_tokens(word, text_col) %>%
+    anti_join(all_stop_words, by = c("word" = "word")) %>%
+    filter(str_detect(word, "[a-z]"))
+}
+
+# discrimination
+train_disc <- read_csv("data/1-discrimination/train.csv")
+cleaned_disc <- clean_text_generic(train_disc)
+
+# spam
+train_spam <- read_csv("data/4-spam/train.csv")
+cleaned_spam <- clean_text_generic(train_spam)
+
+# authors
+train_auth <- read_csv("data/0-authors/train.csv")
+cleaned_auth <- clean_text_generic(train_auth)
+
+head(cleaned_auth, 20)
