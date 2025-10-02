@@ -1,8 +1,10 @@
-library(readr)
 library(dplyr)
 library(tidytext)
 library(stringr)
-library(purrr)
+library(ggplot2)
+library(tidyr)
+library(forcats)
+library(wordcloud2)
 
 # зчитуємо додаткові стоп-слова та об'єднуємо з tidytext::stop_words
 custom_stop_words <- tibble(word = unique(read_lines("stop_words.txt")))
@@ -39,3 +41,58 @@ train_auth <- read_csv("data/0-authors/train.csv")
 cleaned_auth <- clean_text_generic(train_auth)
 
 head(cleaned_auth, 20)
+
+#----------Data visualization--------------------
+# 1) Downloading dataset
+news <- read_csv("data/2-fake_news/train.csv", show_col_types = FALSE) %>%
+  mutate(
+    Label = str_to_lower(Label),
+    text  = paste(Headline %||% "", Body %||% "", sep = " ")
+  )
+  
+# 2) Saving only fake news and cleaning text
+news_fake <- news %>% filter(Label == "fake") %>% select(text)
+cleaned_fake <- clean_text_generic(news_fake)
+
+# 3) Finding top of words for fake news
+top_fake_words <- cleaned_fake %>%
+  count(word, sort = TRUE) %>%
+  slice_max(n, n = 30) %>%
+  mutate(word = fct_reorder(word, n))
+
+ggplot(top_fake_words, aes(x = word, y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top-30 words in FAKE news",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 13)
+  
+#Top-20 bigrams in FAKE news
+  fake_bigrams <- news_fake %>%
+  mutate(text = str_to_lower(text),
+         text = str_replace_all(text, "[[:punct:]]|[[:digit:]]", " ")) %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+  separate(bigram, c("w1","w2"), sep = " ") %>%
+  filter(!w1 %in% all_stop_words$word,
+         !w2 %in% all_stop_words$word,
+         str_detect(w1, "[a-z]"),
+         str_detect(w2, "[a-z]")) %>%
+  unite("bigram", w1, w2, sep = " ")
+
+top_fake_bigrams <- fake_bigrams %>%
+  count(bigram, sort = TRUE) %>%
+  slice_max(n, n = 20) %>%
+  mutate(bigram = fct_reorder(bigram, n))
+
+ggplot(top_fake_bigrams, aes(n, bigram)) +
+  geom_col() +
+  labs(title = "Top-20 bigrams in FAKE news", x = NULL, y = NULL) +
+  theme_minimal(base_size = 13)
+  
+#Cloud from words
+wordcloud_data <- cleaned_fake %>%
+  count(word, sort = TRUE)
+
+wordcloud2(wordcloud_data, size = 1, color = "darkblue", backgroundColor = "white")
